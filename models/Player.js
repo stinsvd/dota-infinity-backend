@@ -7,22 +7,33 @@ const playerSchema = new mongoose.Schema({
         unique: true,
         index: true
     },
-    prestige: {
+    level: {
         type: Number,
-        default: 0
-    },
-    gold: {
-        type: Number,
-        default: 0
+        default: 1
     },
     experience: {
         type: Number,
         default: 0
     },
-    items: {
-        type: Array,
-        default: []
+    gamesPlayed: {
+        type: Number,
+        default: 0
     },
+    wins: {
+        type: Number,
+        default: 0
+    },
+    mvpCount: {
+        type: Number,
+        default: 0
+    },
+    matchHistory: [{
+        hero: String,
+        win: Boolean,
+        prestige: Number,
+        kills: Number,
+        date: { type: Date, default: Date.now }
+    }],
     lastUpdated: {
         type: Date,
         default: Date.now

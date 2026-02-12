@@ -47,21 +47,31 @@ app.get('/player/:steamId', authenticate, async (req, res) => {
     }
 });
 
-// Save Player Data
-app.post('/player/:steamId/save', authenticate, async (req, res) => {
+// Update Player Stats & History
+app.post('/player/:steamId/report-match', authenticate, async (req, res) => {
     try {
-        const { prestige, gold, experience, items } = req.body;
-        const player = await Player.findOneAndUpdate(
-            { steamId: req.params.steamId },
-            {
-                prestige,
-                gold,
-                experience,
-                items,
-                lastUpdated: Date.now()
-            },
-            { new: true, upsert: true }
-        );
+        const { win, prestige, kills, hero, expGain } = req.body;
+
+        const player = await Player.findOne({ steamId: req.params.steamId });
+        if (!player) return res.status(404).json({ error: 'Player not found' });
+
+        // Update Stats
+        player.gamesPlayed += 1;
+        if (win) player.wins += 1;
+        player.experience += (expGain || 0);
+
+        // Simple Level Logic: 1000 exp per level
+        player.level = Math.floor(player.experience / 1000) + 1;
+
+        // Add to History (Keep last 10)
+        player.matchHistory.unshift({ hero, win, prestige, kills });
+        if (player.matchHistory.length > 10) {
+            player.matchHistory.pop();
+        }
+
+        player.lastUpdated = Date.now();
+        await player.save();
+
         res.json({ success: true, player });
     } catch (err) {
         res.status(500).json({ error: err.message });
