@@ -27,11 +27,16 @@ const playerSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    rating: {
+        type: Number,
+        default: 1500
+    },
     matchHistory: [{
         hero: String,
         win: Boolean,
         prestige: Number,
         kills: Number,
+        damage: Number,
         date: { type: Date, default: Date.now }
     }],
     lastUpdated: {

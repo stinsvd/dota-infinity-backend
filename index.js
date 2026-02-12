@@ -50,7 +50,7 @@ app.get('/player/:steamId', authenticate, async (req, res) => {
 // Update Player Stats & History
 app.post('/player/:steamId/report-match', authenticate, async (req, res) => {
     try {
-        const { win, prestige, kills, hero, expGain } = req.body;
+        const { win, prestige, kills, damage, hero, expGain, isMvp } = req.body;
 
         const player = await Player.findOne({ steamId: req.params.steamId });
         if (!player) return res.status(404).json({ error: 'Player not found' });
@@ -58,13 +58,18 @@ app.post('/player/:steamId/report-match', authenticate, async (req, res) => {
         // Update Stats
         player.gamesPlayed += 1;
         if (win) player.wins += 1;
+        if (isMvp) player.mvpCount = (player.mvpCount || 0) + 1;
         player.experience += (expGain || 0);
+
+        // MMR Logic: +25 for win, -25 for loss (min 300)
+        let mmrChange = win ? 25 : -25;
+        player.rating = Math.max(300, (player.rating || 1500) + mmrChange);
 
         // Simple Level Logic: 1000 exp per level
         player.level = Math.floor(player.experience / 1000) + 1;
 
         // Add to History (Keep last 10)
-        player.matchHistory.unshift({ hero, win, prestige, kills });
+        player.matchHistory.unshift({ hero, win, prestige, kills, damage });
         if (player.matchHistory.length > 10) {
             player.matchHistory.pop();
         }
