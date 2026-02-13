@@ -7,6 +7,10 @@ const playerSchema = new mongoose.Schema({
         unique: true,
         index: true
     },
+    nickname: {
+        type: String,
+        default: 'Unknown'
+    },
     level: {
         type: Number,
         default: 1

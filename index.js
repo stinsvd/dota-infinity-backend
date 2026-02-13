@@ -50,10 +50,15 @@ app.get('/player/:steamId', authenticate, async (req, res) => {
 // Update Player Stats & History
 app.post('/player/:steamId/report-match', authenticate, async (req, res) => {
     try {
-        const { win, prestige, kills, damage, hero, expGain, isMvp } = req.body;
+        const { win, prestige, kills, damage, hero, expGain, isMvp, nickname } = req.body;
 
         const player = await Player.findOne({ steamId: req.params.steamId });
         if (!player) return res.status(404).json({ error: 'Player not found' });
+
+        // Update nickname if provided
+        if (nickname) {
+            player.nickname = nickname;
+        }
 
         // Update Stats
         player.gamesPlayed += 1;
@@ -78,6 +83,68 @@ app.post('/player/:steamId/report-match', authenticate, async (req, res) => {
         await player.save();
 
         res.json({ success: true, player });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// === LEADERBOARD API ===
+
+// Overall Top 10 (by rating)
+app.get('/leaderboard/overall', authenticate, async (req, res) => {
+    try {
+        const players = await Player.find({ gamesPlayed: { $gte: 1 } })
+            .sort({ rating: -1 })
+            .limit(10)
+            .select('steamId nickname rating gamesPlayed wins level');
+        res.json(players);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Weekly Top 10 (by wins in last 7 days)
+app.get('/leaderboard/weekly', authenticate, async (req, res) => {
+    try {
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+        const results = await Player.aggregate([
+            // Unwind matchHistory to filter by date
+            { $unwind: '$matchHistory' },
+            // Only matches from last 7 days
+            { $match: { 'matchHistory.date': { $gte: sevenDaysAgo } } },
+            // Group back by player
+            {
+                $group: {
+                    _id: '$_id',
+                    steamId: { $first: '$steamId' },
+                    nickname: { $first: '$nickname' },
+                    rating: { $first: '$rating' },
+                    level: { $first: '$level' },
+                    weeklyGames: { $sum: 1 },
+                    weeklyWins: {
+                        $sum: { $cond: ['$matchHistory.win', 1, 0] }
+                    }
+                }
+            },
+            // Sort by wins descending, then by games
+            { $sort: { weeklyWins: -1, weeklyGames: -1 } },
+            { $limit: 10 },
+            // Project clean output
+            {
+                $project: {
+                    _id: 0,
+                    steamId: 1,
+                    nickname: 1,
+                    rating: 1,
+                    level: 1,
+                    weeklyGames: 1,
+                    weeklyWins: 1
+                }
+            }
+        ]);
+
+        res.json(results);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
