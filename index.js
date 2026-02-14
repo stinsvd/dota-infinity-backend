@@ -36,11 +36,30 @@ app.get('/', (req, res) => {
 app.get('/player/:steamId', authenticate, async (req, res) => {
     try {
         let player = await Player.findOne({ steamId: req.params.steamId });
+
+        // Handle Nickname Update (if provided in query)
+        let nickname = req.query.nickname;
+        if (nickname) {
+            try {
+                nickname = decodeURIComponent(nickname);
+            } catch (e) {
+                // Keep original if decode fails
+            }
+        }
+
         if (!player) {
             // Create new player entry if doesn't exist
-            player = new Player({ steamId: req.params.steamId });
+            player = new Player({
+                steamId: req.params.steamId,
+                nickname: nickname || "Unknown"
+            });
+            await player.save();
+        } else if (nickname && player.nickname !== nickname) {
+            // Update existing nickname if changed
+            player.nickname = nickname;
             await player.save();
         }
+
         res.json(player);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -90,13 +109,31 @@ app.post('/player/:steamId/report-match', authenticate, async (req, res) => {
 
 // === LEADERBOARD API ===
 
+// Simple In-Memory Cache
+const cache = {
+    overall: { data: null, lastUpdated: 0 },
+    weekly: { data: null, lastUpdated: 0 }
+};
+const CACHE_DURATION = 5 * 60 * 1000; // 5 Minutes
+
 // Overall Top 10 (by rating)
 app.get('/leaderboard/overall', authenticate, async (req, res) => {
     try {
+        // Check Cache
+        const now = Date.now();
+        if (cache.overall.data && (now - cache.overall.lastUpdated < CACHE_DURATION)) {
+            return res.json(cache.overall.data);
+        }
+
         const players = await Player.find({ gamesPlayed: { $gte: 1 } })
             .sort({ rating: -1 })
             .limit(10)
             .select('steamId nickname rating gamesPlayed wins level');
+
+        // Update Cache
+        cache.overall.data = players;
+        cache.overall.lastUpdated = now;
+
         res.json(players);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -106,13 +143,24 @@ app.get('/leaderboard/overall', authenticate, async (req, res) => {
 // Weekly Top 10 (by wins in last 7 days)
 app.get('/leaderboard/weekly', authenticate, async (req, res) => {
     try {
+        // Check Cache
+        const now = Date.now();
+        if (cache.weekly.data && (now - cache.weekly.lastUpdated < CACHE_DURATION)) {
+            return res.json(cache.weekly.data);
+        }
+
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
         const results = await Player.aggregate([
             // Unwind matchHistory to filter by date
             { $unwind: '$matchHistory' },
-            // Only matches from last 7 days
-            { $match: { 'matchHistory.date': { $gte: sevenDaysAgo } } },
+            // Only matches from last 7 days AND ensure date exists
+            {
+                $match: {
+                    'matchHistory.date': { $gte: sevenDaysAgo },
+                    'matchHistory.win': true // Optimization: Only count wins
+                }
+            },
             // Group back by player
             {
                 $group: {
@@ -121,14 +169,11 @@ app.get('/leaderboard/weekly', authenticate, async (req, res) => {
                     nickname: { $first: '$nickname' },
                     rating: { $first: '$rating' },
                     level: { $first: '$level' },
-                    weeklyGames: { $sum: 1 },
-                    weeklyWins: {
-                        $sum: { $cond: ['$matchHistory.win', 1, 0] }
-                    }
+                    weeklyWins: { $sum: 1 } // Since we pre-filtered wins, just count
                 }
             },
-            // Sort by wins descending, then by games
-            { $sort: { weeklyWins: -1, weeklyGames: -1 } },
+            // Sort by wins descending
+            { $sort: { weeklyWins: -1 } },
             { $limit: 10 },
             // Project clean output
             {
@@ -138,14 +183,18 @@ app.get('/leaderboard/weekly', authenticate, async (req, res) => {
                     nickname: 1,
                     rating: 1,
                     level: 1,
-                    weeklyGames: 1,
                     weeklyWins: 1
                 }
             }
         ]);
 
+        // Update Cache
+        cache.weekly.data = results;
+        cache.weekly.lastUpdated = now;
+
         res.json(results);
     } catch (err) {
+        console.error("Weekly Leaderboard Error:", err);
         res.status(500).json({ error: err.message });
     }
 });
