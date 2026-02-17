@@ -220,6 +220,39 @@ app.post('/maintenance/cleanup-hacked-stats', authenticate, async (req, res) => 
     }
 });
 
+// Reset specific player stats
+app.post('/maintenance/reset-player/:steamId', authenticate, async (req, res) => {
+    try {
+        console.log(`[Maintenance] Resetting stats for player: ${req.params.steamId}`);
+        const result = await Player.findOneAndUpdate(
+            { steamId: req.params.steamId },
+            {
+                $set: {
+                    rating: 1500,
+                    wins: 0,
+                    gamesPlayed: 0,
+                    level: 1,
+                    experience: 0,
+                    matchHistory: []
+                }
+            },
+            { new: true }
+        );
+
+        if (!result) {
+            return res.status(404).json({ error: 'Player not found' });
+        }
+
+        res.json({
+            success: true,
+            message: `Stats for SteamID ${req.params.steamId} have been reset to default.`,
+            player: result
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // === LEADERBOARD API ===
 
 // Simple In-Memory Cache
