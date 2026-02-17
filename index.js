@@ -16,15 +16,19 @@ app.use(express.json());
 const authenticate = (req, res, next) => {
     const key = req.headers['x-api-key'];
 
-    // Поддержка нового секретного ключа (теперь он должен быть в переменной API_KEY)
-    if (key && key === API_KEY) {
+    // Разрешенные ключи: 
+    // 1. Настоящий ключ от выделенного сервера (API_KEY в Render)
+    // 2. Локальный ключ для тестирования в Workshop Tools
+    const isAuthorized = (key && key === API_KEY) ||
+        (key === "Invalid_NotOnDedicatedServer");
+
+    if (isAuthorized) {
         next();
     } else if (key === "dota_inf_8f23kLp92_secure_secret") {
-        // Старый скомпрометированный ключ - блокируем или предупреждаем
-        console.warn(`[Security] Blocked request using COMPROMISED old key from IP: ${req.ip}`);
+        console.warn(`[Security] Blocked COMPROMISED old key from IP: ${req.ip}`);
         res.status(403).json({ error: 'Key Compromised. Update your Dedicated Server Key.' });
     } else {
-        console.warn(`[Security] Unauthorized access attempt from IP: ${req.ip}`);
+        console.warn(`[Security] Unauthorized: RECEIVED KEY: "${key}" from IP: ${req.ip}`);
         res.status(403).json({ error: 'Unauthorized' });
     }
 };
