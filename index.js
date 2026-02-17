@@ -25,8 +25,6 @@ const authenticate = (req, res, next) => {
         res.status(403).json({ error: 'Key Compromised. Update your Dedicated Server Key.' });
     } else {
         console.warn(`[Security] Unauthorized access attempt from IP: ${req.ip}`);
-        console.warn(`[Security] RECEIVED KEY: "${key}"`);
-        console.warn(`[Security] Expected key starts with: "${API_KEY ? API_KEY.substring(0, 5) : 'NONE'}..."`);
         res.status(403).json({ error: 'Unauthorized' });
     }
 };
