@@ -16,15 +16,33 @@ app.use(express.json());
 const authenticate = (req, res, next) => {
     const key = req.headers['x-api-key'];
 
-    // Разрешенные ключи: 
-    // 1. Настоящий ключ от выделенного сервера (API_KEY в Render)
-    // 2. Локальный ключ для тестирования в Workshop Tools
-    const isAuthorized = (key && key === API_KEY) ||
-        (key === "Invalid_NotOnDedicatedServer");
+    // РАЗГРАНИЧЕНИЕ ПРАВ:
+    // 1. Полный доступ (Мастер-ключ из Render)
+    const isMasterKey = (key && key === API_KEY);
 
-    if (isAuthorized) {
-        next();
-    } else if (key === "dota_inf_8f23kLp92_secure_secret") {
+    // 2. Только чтение (Ключ из Workshop Tools)
+    const isLocalKey = (key === "Invalid_NotOnDedicatedServer");
+
+    if (isMasterKey) {
+        req.userRole = 'admin'; // Полные права
+        return next();
+    }
+
+    if (isLocalKey) {
+        // Проверяем, куда идет запрос
+        const isReadOperation = req.method === 'GET' &&
+            (req.path.startsWith('/player/') || req.path.startsWith('/leaderboard/'));
+
+        if (isReadOperation) {
+            req.userRole = 'tester'; // Только чтение
+            return next();
+        } else {
+            console.warn(`[Security] Local key BLOCKED from write operation: ${req.method} ${req.path}`);
+            return res.status(403).json({ error: 'Local key is Read-Only. Match reporting is disabled in Workshop Tools.' });
+        }
+    }
+
+    if (key === "dota_inf_8f23kLp92_secure_secret") {
         console.warn(`[Security] Blocked COMPROMISED old key from IP: ${req.ip}`);
         res.status(403).json({ error: 'Key Compromised. Update your Dedicated Server Key.' });
     } else {
